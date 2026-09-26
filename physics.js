@@ -14,7 +14,7 @@ export const COURSE = {
   // Solid posts teach impact response; open edges teach recovery. No invisible perimeter.
   posts:[{x:-2.5,z:15,r:.55},{x:5.1,z:30,r:.65}]
 };
-export const TUNE={force:11,gravity:16,resistance:.72,traction:5.2,maxSpeed:11,restitution:.43,radius:.42,fallPenalty:4};
+export const TUNE={force:11,gravity:16,resistance:1.45,traction:5.2,maxSpeed:11,restitution:.43,radius:.42,fallPenalty:4};
 export const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
 export function surfaceAt(x,z,course=COURSE){
   // Seam overlap is intentional: the most recently entered tile wins.
@@ -26,17 +26,21 @@ export function newGame(){return {x:0,z:0,y:.42,vx:0,vz:0,vy:0,remaining:COURSE.
 export function step(s,input,dt,course=COURSE){
   if(s.status!=='playing')return {...s};
   dt=clamp(dt,0,1/30);let n={...s},t=surfaceAt(n.x,n.z,course),mag=Math.hypot(input.x||0,input.z||0)||1;
-  const ax=clamp((input.x||0)/mag,-1,1)*TUNE.force,az=clamp((input.z||0)/mag,-1,1)*TUNE.force;
+  const ax=clamp((input.x||0)/mag,-1,1)*TUNE.force*Math.min(1,mag),az=clamp((input.z||0)/mag,-1,1)*TUNE.force*Math.min(1,mag);
   n.remaining=Math.max(0,n.remaining-dt);n.elapsed+=dt;
   if(n.remaining===0){n.status='timeout';return n}
   if(n.fallTime>0){n.fallTime-=dt;n.vy-=TUNE.gravity*dt;n.y+=n.vy*dt;n.x+=n.vx*dt;n.z+=n.vz*dt;
     if(n.fallTime<=0){const cp=n.checkpoint?course.checkpoints[n.checkpoint-1]:course.spawn;Object.assign(n,{x:cp.x,z:cp.z,y:(surfaceAt(cp.x,cp.z,course)?.h||0)+TUNE.radius,vx:0,vz:0,vy:0,fallTime:0});n.remaining=Math.max(0,n.remaining-TUNE.fallPenalty);if(n.remaining===0)n.status='timeout'}
     return n;
   }
+  // Static grip holds a resting marble on modest slopes, but moving marbles still feel them.
+  const resting=Math.hypot(n.vx,n.vz)<.045 && Math.hypot(ax,az)<.045;
+  if(resting){n.vx=0;n.vz=0}
   // Acceleration acts on velocity, not position. Gravity resolves along the surface tangent.
   const drag=Math.exp(-TUNE.resistance*dt);
-  n.vx=(n.vx+(ax-TUNE.gravity*(t?.dx||0))*dt)*drag;
-  n.vz=(n.vz+(az-TUNE.gravity*(t?.dz||0))*dt)*drag;
+  n.vx=(n.vx+(ax-(resting?0:TUNE.gravity*(t?.dx||0)))*dt)*drag;
+  n.vz=(n.vz+(az-(resting?0:TUNE.gravity*(t?.dz||0)))*dt)*drag;
+  if(input.brake){const stop=Math.max(0,1-12*dt);n.vx*=stop;n.vz*=stop;if(Math.hypot(n.vx,n.vz)<.045)n.vx=n.vz=0}
   // Limited lateral grip: bank redirects only gradually, without pinning the sphere.
   const speed=Math.hypot(n.vx,n.vz);if(speed>TUNE.maxSpeed){n.vx*=TUNE.maxSpeed/speed;n.vz*=TUNE.maxSpeed/speed}
   let px=n.x+n.vx*dt,pz=n.z+n.vz*dt;
