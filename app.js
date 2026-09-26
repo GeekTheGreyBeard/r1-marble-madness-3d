@@ -1,6 +1,6 @@
-import {screenToWorld,tiltControl} from './controls.js';
+import {tiltControl,gesture,isTap,GESTURE} from './controls.js';
 import {COURSE,TUNE,newGame,step,clamp} from './physics.js';
-const $=id=>document.getElementById(id),canvas=$('game'),ctx=canvas.getContext('2d');let state=newGame(),started=false,paused=false,tilt=false,tiltSeen=false,tiltInput={x:0,z:0},tiltCenter=null,lastOrientation=null,force=3,last=performance.now(),camera={x:0,z:7},keys=new Set(),presses=new Map(),notice='';
+const $=id=>document.getElementById(id),canvas=$('game'),ctx=canvas.getContext('2d');let state=newGame(),started=false,paused=false,tiltSeen=false,tiltInput={x:0,z:0},tiltCenter=null,force=3,last=performance.now(),camera={x:0,z:7},keys=new Set(),notice='',brakePressed=false,jumpQueued=false,orientationTimer=null,motionStatus='idle',lastTap=null,gestureStart=null,muted=true,audioContext=null;
 const say=t=>{notice=t;$('message').textContent=t};
 const scale=8.4;
 function project(x,z,h=0){const X=x-camera.x,Z=z-camera.z;return {x:120+(X-Z)*scale*.70,y:147+(X+Z)*scale*.38-h*scale*.9}}
@@ -10,19 +10,36 @@ function orb(x,z,y,r,color,roll=0){const p=project(x,z,y);const g=ctx.createRadi
 function draw(){let sky=ctx.createLinearGradient(0,0,0,282);sky.addColorStop(0,'#203d4c');sky.addColorStop(1,'#08131d');ctx.fillStyle=sky;ctx.fillRect(0,0,240,282);ctx.fillStyle='#8dbdb322';for(let i=0;i<12;i++){const x=(i*83)%240,y=(i*97)%282;ctx.fillRect(x,y,2,2)}
   for(const t of COURSE.tiles)tile(t);
   const cp=COURSE.checkpoints[0],p=project(cp.x,cp.z,1.25);ctx.strokeStyle=state.checkpoint?'#fff4a4':'#9ce7e7';ctx.lineWidth=3;ctx.beginPath();ctx.ellipse(p.x,p.y,10,5,-.5,0,7);ctx.stroke();const g=project(COURSE.goal.x,COURSE.goal.z,.6);ctx.strokeStyle='#a1ffe0';ctx.lineWidth=4;ctx.beginPath();ctx.ellipse(g.x,g.y,13,7,-.5,0,7);ctx.stroke();for(const post of COURSE.posts)orb(post.x,post.z,(COURSE.tiles.find(t=>Math.abs(post.x-t.x)<=t.w/2&&Math.abs(post.z-t.z)<=t.l/2)?.h||0)+.55,post.r*scale*.8,'#df7770');const shadow=project(state.x,state.z,state.y-TUNE.radius);ctx.fillStyle='#00121daa';ctx.beginPath();ctx.ellipse(shadow.x+3,shadow.y+5,6,2.8,-.45,0,7);ctx.fill();orb(state.x,state.z,state.y,5.5,'#f8b35b',state.roll);}
-function sync(){ $('time').textContent=state.remaining.toFixed(1);$('time').style.color=state.remaining<15?'#ff7c77':'#ffe093';$('speed').textContent=`FORCE ${force} ↕`;if(state.status==='finished')say(`FINISH · ${state.remaining.toFixed(1)}s LEFT · ${state.falls} FALLS`);else if(state.status==='timeout')say('TIME UP · RESTART IN MENU');else if(state.fallTime>0)say('FALL · QUICK RESPAWN −4s');else if(state.checkpoint&&notice==='')say('CHECKPOINT');}
-function start(){state=newGame();tiltCenter=null;tiltInput={x:0,z:0};camera={x:0,z:7};started=true;paused=false;$('overlay').hidden=true;$('help').hidden=true;say('ROLL TO THE GLOWING GOAL');sync()}
-$('start').onclick=start;$('restart').onclick=start;$('menu').onclick=()=>{paused=true;$('help').hidden=false};$('resume').onclick=()=>{paused=false;$('help').hidden=true};
+function beep(frequency=520){if(muted||!audioContext)return;const o=audioContext.createOscillator(),g=audioContext.createGain();o.frequency.value=frequency;g.gain.setValueAtTime(.08,audioContext.currentTime);g.gain.exponentialRampToValueAtTime(.001,audioContext.currentTime+.12);o.connect(g).connect(audioContext.destination);o.start();o.stop(audioContext.currentTime+.12)}
+function sync(){ $('time').textContent=state.remaining.toFixed(1);$('time').style.color=state.remaining<15?'#ff7c77':'#ffe093';$('speed').textContent=`FORCE ${force} ↕`;
+  if(state.status==='finished'||state.status==='timeout'){if($('result').hidden)beep(state.status==='finished'?760:210);$('result').hidden=false;$('result-title').textContent=state.status==='finished'?'COURSE COMPLETE':'TIME UP';$('result-detail').textContent=state.status==='finished'?`${state.remaining.toFixed(1)}s left · ${state.falls} falls · Momentum Lab complete. Replay this test course.`:`${state.falls} falls · Replay this test course.`}
+  else if(state.fallTime>0)say('FALL · QUICK RESPAWN −4s');else if(state.checkpoint&&notice==='')say('CHECKPOINT');}
+async function prepareTilt(){tiltSeen=false;tiltCenter=null;tiltInput={x:0,z:0};motionStatus='waiting';say('HOLD YOUR PLAYING POSTURE · CALIBRATING TILT');clearTimeout(orientationTimer);
+  try{if(typeof DeviceOrientationEvent==='undefined')throw Error('unsupported');if(typeof DeviceOrientationEvent.requestPermission==='function'&&await DeviceOrientationEvent.requestPermission()!=='granted')throw Error('permission denied');
+    orientationTimer=setTimeout(()=>{if(!tiltSeen){motionStatus='unavailable';say('NO TILT DATA · CHECK MOTION ACCESS, THEN REPLAY')}},2200);
+  }catch(e){motionStatus='unavailable';say(`TILT UNAVAILABLE (${e.message}) · CHECK MOTION ACCESS, THEN REPLAY`)}
+}
+function start(){state=newGame();camera={x:0,z:7};started=true;paused=false;jumpQueued=false;lastTap=null;$('overlay').hidden=true;$('help').hidden=true;$('result').hidden=true;prepareTilt();sync()}
+$('start').onclick=start;$('restart').onclick=start;$('replay').onclick=start;
+function openDrawer(){if(!started||!$('result').hidden)return;paused=true;lastTap=null;$('help').hidden=false}
+function closeDrawer(){paused=false;$('help').hidden=true;lastTap=null}
+$('resume').onclick=closeDrawer;
 const adjust=d=>{force=clamp(force+d,1,5);sync();say(`FORCE ${force} · ${force<3?'PRECISION':'MOMENTUM'}`)};
-addEventListener('wheel',e=>{if(!started)return;e.preventDefault();adjust(e.deltaY>0?-1:1)},{passive:false});let touchY=null;$('speed').addEventListener('pointerdown',e=>{touchY=e.clientY;$('speed').setPointerCapture(e.pointerId)});$('speed').addEventListener('pointerup',e=>{if(touchY!==null)adjust(touchY-e.clientY>8?1:touchY-e.clientY< -8?-1:1);touchY=null});
-$('recenter').onclick=()=>{tiltCenter=lastOrientation?{...lastOrientation}:null;tiltInput={x:0,z:0};say(tiltCenter?'TILT RECENTERED':'WAITING FOR TILT SAMPLE')};
-$('tilt').onclick=async()=>{try{if(typeof DeviceOrientationEvent==='undefined')throw Error();if(typeof DeviceOrientationEvent.requestPermission==='function'&&await DeviceOrientationEvent.requestPermission()!=='granted')throw Error();tilt=true;tiltSeen=false;tiltCenter=null;tiltInput={x:0,z:0};say('HOLD LEVEL · AUTO CENTERING');setTimeout(()=>{if(tilt&&!tiltSeen){tilt=false;say('NO TILT EVENTS · USE TOUCH ARROWS')}},2200)}catch{tilt=false;say('TILT UNAVAILABLE · USE TOUCH ARROWS')}};
-addEventListener('deviceorientation',e=>{if(!tilt||!Number.isFinite(e.gamma)||!Number.isFinite(e.beta))return;tiltSeen=true;lastOrientation={gamma:e.gamma,beta:e.beta};if(!tiltCenter){tiltCenter={...lastOrientation};say('TILT CENTERED · RECENTER ANYTIME')}tiltInput=tiltControl(e.gamma,e.beta,tiltCenter)});
-for(const b of document.querySelectorAll('[data-dir]')){const dir=b.dataset.dir;b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);presses.set(e.pointerId,dir)});for(const ev of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(ev,e=>presses.delete(e.pointerId))}
+addEventListener('wheel',e=>{if(!started||paused||!$('result').hidden)return;e.preventDefault();adjust(e.deltaY>0?-1:1)},{passive:false});let touchY=null;$('speed').addEventListener('pointerdown',e=>{touchY=e.clientY;$('speed').setPointerCapture(e.pointerId)});$('speed').addEventListener('pointerup',e=>{if(touchY!==null)adjust(touchY-e.clientY>8?1:touchY-e.clientY< -8?-1:1);touchY=null});
+addEventListener('deviceorientation',e=>{if(!started||!Number.isFinite(e.gamma)||!Number.isFinite(e.beta))return;tiltSeen=true;motionStatus='ready';clearTimeout(orientationTimer);if(!tiltCenter){tiltCenter={gamma:e.gamma,beta:e.beta};say('TILT CENTERED · DOUBLE-TAP TO JUMP')}tiltInput=tiltControl(e.gamma,e.beta,tiltCenter)});
+$('shell').addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'&&e.button!==0)return;gestureStart={x:e.clientX,y:e.clientY,id:e.pointerId,target:e.target,time:performance.now()}});
+$('shell').addEventListener('pointerup',e=>{if(!gestureStart||gestureStart.id!==e.pointerId)return;const startPoint=gestureStart;gestureStart=null;const end={x:e.clientX,y:e.clientY},action=gesture(startPoint,end,!$('help').hidden);if(action==='open'){openDrawer();return}if(action==='close'){closeDrawer();return}
+  if(!started||paused||state.status!=='playing'||!isTap(startPoint,end)||startPoint.x>=240-GESTURE.edge||startPoint.target!==canvas){lastTap=null;return}
+  const now=performance.now();if(lastTap&&now-lastTap.time<=GESTURE.doubleMs&&Math.hypot(lastTap.x-end.x,lastTap.y-end.y)<28){jumpQueued=true;lastTap=null;say('JUMP');beep(550)}else lastTap={...end,time:now};
+});$('shell').addEventListener('pointercancel',()=>{gestureStart=null;lastTap=null});
 addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();keys.add(e.key.toLowerCase())});addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
-function frame(now){const dt=Math.min((now-last)/1000,1/30);last=now;if(started&&!paused){let horizontal=0,vertical=0;const dirs=[...presses.values(),...keys];let brake=dirs.some(d=>d===' '||d==='b')||brakePressed;for(const d of dirs){if(d==='left'||d==='arrowleft'||d==='a')horizontal--;if(d==='right'||d==='arrowright'||d==='d')horizontal++;if(d==='up'||d==='arrowup'||d==='w')vertical--;if(d==='down'||d==='arrowdown'||d==='s')vertical++}// screen-space axes use the same inverse basis as the visible pad
-    let {x,z}=screenToWorld(horizontal,vertical);
-    if(tilt&&tiltSeen){x+=tiltInput.x;z+=tiltInput.z}state=step(state,{x:clamp(x,-1,1)*force/3,z:clamp(z,-1,1)*force/3,brake},dt);camera.x+=(state.x-camera.x)*Math.min(1,dt*3);camera.z+=(state.z+7-camera.z)*Math.min(1,dt*3);sync();draw()}requestAnimationFrame(frame)}
-let brakePressed=false;const brakeButton=$('brake');brakeButton.addEventListener('pointerdown',e=>{e.preventDefault();brakeButton.setPointerCapture(e.pointerId);brakePressed=true});for(const ev of ['pointerup','pointercancel','lostpointercapture'])brakeButton.addEventListener(ev,()=>brakePressed=false);requestAnimationFrame(frame);
-
-window.__lab=()=>({state:{...state},tilt,tiltSeen,tiltCenter,tiltInput:{...tiltInput},force,started});
+function frame(now){const dt=Math.min((now-last)/1000,1/30);last=now;if(started&&!paused&&state.status==='playing'&&motionStatus==='ready'){
+  const brake=keys.has(' ')||keys.has('b')||brakePressed;
+  state=step(state,{x:tiltInput.x*force/3,z:tiltInput.z*force/3,brake,jump:jumpQueued},dt);jumpQueued=false;camera.x+=(state.x-camera.x)*Math.min(1,dt*3);camera.z+=(state.z+7-camera.z)*Math.min(1,dt*3);sync()
+}draw();requestAnimationFrame(frame)}
+const brakeButton=$('brake');brakeButton.addEventListener('pointerdown',e=>{e.preventDefault();brakeButton.setPointerCapture(e.pointerId);brakePressed=true});for(const ev of ['pointerup','pointercancel','lostpointercapture'])brakeButton.addEventListener(ev,()=>brakePressed=false);
+$('audio').onclick=()=>{muted=!muted;const b=$('audio');b.setAttribute('aria-pressed',String(!muted));b.setAttribute('aria-label',muted?'Unmute audio':'Mute audio');b.title=muted?'Unmute audio':'Mute audio';if(!muted){audioContext??=new (window.AudioContext||window.webkitAudioContext)();audioContext.resume()}};
+requestAnimationFrame(frame);
+window.__lab=()=>({state:{...state},tiltSeen,tiltCenter,tiltInput:{...tiltInput},motionStatus,force,started,paused,jumpQueued,muted});
+// Local-only deterministic finish-zone browser fixture; never available on published Pages.
+if(location.hostname==='127.0.0.1'||location.hostname==='localhost')window.__labSetState=patch=>{state={...state,...patch};sync()};

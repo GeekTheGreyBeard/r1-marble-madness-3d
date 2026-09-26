@@ -22,7 +22,7 @@ export function surfaceAt(x,z,course=COURSE){
   for(const t of course.tiles){if(Math.abs(x-t.x)<=t.w/2&&Math.abs(z-t.z)<=t.l/2){const d=((x-t.x)/t.w)**2+((z-t.z)/t.l)**2;if(d<score){best=t;score=d}}}
   return best;
 }
-export function newGame(){return {x:0,z:0,y:.42,vx:0,vz:0,vy:0,remaining:COURSE.seconds,checkpoint:0,falls:0,status:'playing',fallTime:0,roll:0,elapsed:0};}
+export function newGame(){return {x:0,z:0,y:.42,vx:0,vz:0,vy:0,remaining:COURSE.seconds,checkpoint:0,falls:0,status:'playing',fallTime:0,roll:0,elapsed:0,jumpHeight:0,jumpVelocity:0};}
 export function step(s,input,dt,course=COURSE){
   if(s.status!=='playing')return {...s};
   dt=clamp(dt,0,1/30);let n={...s},t=surfaceAt(n.x,n.z,course),mag=Math.hypot(input.x||0,input.z||0)||1;
@@ -30,9 +30,11 @@ export function step(s,input,dt,course=COURSE){
   n.remaining=Math.max(0,n.remaining-dt);n.elapsed+=dt;
   if(n.remaining===0){n.status='timeout';return n}
   if(n.fallTime>0){n.fallTime-=dt;n.vy-=TUNE.gravity*dt;n.y+=n.vy*dt;n.x+=n.vx*dt;n.z+=n.vz*dt;
-    if(n.fallTime<=0){const cp=n.checkpoint?course.checkpoints[n.checkpoint-1]:course.spawn;Object.assign(n,{x:cp.x,z:cp.z,y:(surfaceAt(cp.x,cp.z,course)?.h||0)+TUNE.radius,vx:0,vz:0,vy:0,fallTime:0});n.remaining=Math.max(0,n.remaining-TUNE.fallPenalty);if(n.remaining===0)n.status='timeout'}
+    if(n.fallTime<=0){const cp=n.checkpoint?course.checkpoints[n.checkpoint-1]:course.spawn;Object.assign(n,{x:cp.x,z:cp.z,y:(surfaceAt(cp.x,cp.z,course)?.h||0)+TUNE.radius,vx:0,vz:0,vy:0,fallTime:0,jumpHeight:0,jumpVelocity:0});n.remaining=Math.max(0,n.remaining-TUNE.fallPenalty);if(n.remaining===0)n.status='timeout'}
     return n;
   }
+  if(input.jump&&n.jumpHeight===0){n.jumpVelocity=5.4;n.jumpHeight=.01}
+  if(n.jumpHeight>0){n.jumpVelocity-=TUNE.gravity*dt;n.jumpHeight=Math.max(0,n.jumpHeight+n.jumpVelocity*dt);if(n.jumpHeight===0)n.jumpVelocity=0}
   // Static grip holds a resting marble on modest slopes, but moving marbles still feel them.
   const resting=Math.hypot(n.vx,n.vz)<.045 && Math.hypot(ax,az)<.045;
   if(resting){n.vx=0;n.vz=0}
@@ -48,8 +50,9 @@ export function step(s,input,dt,course=COURSE){
   n.x=px;n.z=pz;n.roll+=Math.hypot(n.vx,n.vz)*dt/TUNE.radius;
   const next=surfaceAt(n.x,n.z,course);
   if(!next){n.fallTime=.65;n.vy=0;n.falls++;return n}
-  n.y=next.h+next.dx*(n.x-next.x)+next.dz*(n.z-next.z)+TUNE.radius;
+  n.y=next.h+next.dx*(n.x-next.x)+next.dz*(n.z-next.z)+TUNE.radius+n.jumpHeight;
   if(n.checkpoint===0&&Math.hypot(n.x-course.checkpoints[0].x,n.z-course.checkpoints[0].z)<2.5)n.checkpoint=1;
-  if(Math.hypot(n.x-course.goal.x,n.z-course.goal.z)<1.2)n.status='finished';
+  // Reaching the luminous end of the goal platform completes the only test course.
+  if(next.kind==='goal'&&Math.abs(n.x-course.goal.x)<next.w/2-.3&&n.z>=course.goal.z-1.5)n.status='finished';
   return n;
 }

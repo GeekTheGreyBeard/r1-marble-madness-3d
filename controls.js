@@ -9,3 +9,13 @@ export function tiltControl(gamma,beta,center){
   const axis=d=>Math.abs(d)<2.5?0:clamp((Math.abs(d)-2.5)/18,0,1)*Math.sign(d);
   return screenToWorld(axis(gamma-center.gamma),axis(beta-center.beta));
 }
+
+export const GESTURE={edge:27,travel:38,cross:42,tapDrift:12,doubleMs:340};
+export function gesture(start,end,drawerOpen){
+  const dx=end.x-start.x,dy=end.y-start.y;
+  if(Math.abs(dy)>GESTURE.cross||Math.abs(dx)<GESTURE.travel)return null;
+  if(!drawerOpen&&start.x>=240-GESTURE.edge&&dx<0)return 'open';
+  if(drawerOpen&&dx>0)return 'close';
+  return null;
+}
+export function isTap(start,end){return Math.hypot(end.x-start.x,end.y-start.y)<=GESTURE.tapDrift}
