@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {COURSE,newGame,step,surfaceAt,TUNE} from './physics.js';
+const tick=(s,i,n)=>{for(let j=0;j<n;j++)s=step(s,i,1/60);return s};
+let s=tick(newGame(),{x:0,z:1},60);assert(s.vz>3,'accelerates');let v=s.vz;s=tick(s,{x:0,z:0},8);assert(s.vz>0&&s.vz<v,'coasts with resistance');let reverse=tick(s,{x:0,z:-1},10);assert(reverse.vz<s.vz,'countersteer brakes');
+const flat={...COURSE,tiles:[{x:0,z:0,w:100,l:100,h:0,dx:0,dz:0}],posts:[],goal:{x:40,z:40},checkpoints:[{x:30,z:30}]};
+const uphill={...flat,tiles:[{...flat.tiles[0],dz:.25}]},downhill={...flat,tiles:[{...flat.tiles[0],dz:-.25}]};
+assert(tick(newGame(),{x:0,z:1},30,).vz>0);let ascend=newGame(),descend=newGame();for(let i=0;i<30;i++){ascend=step(ascend,{z:1},1/60,uphill);descend=step(descend,{z:1},1/60,downhill)}assert(descend.vz>ascend.vz+2,'slope acceleration');
+let impact={...newGame(),x:-3.6,z:15,y:2.22,vx:7,vz:0};impact=step(impact,{x:0,z:0},1/30);assert(impact.vx<0,'post collision reflects velocity');
+let fall={...newGame(),x:4,z:24,vx:11,vz:0,checkpoint:1};for(let i=0;i<30&&fall.fallTime===0;i++)fall=step(fall,{x:0,z:0},1/60);assert(fall.fallTime>0&&fall.falls===1,'open edge falls');for(let i=0;i<41;i++)fall=step(fall,{},1/60);assert.equal(fall.fallTime,0);assert(Math.hypot(fall.x,fall.z-20)<.1,'checkpoint respawn');assert(fall.remaining<COURSE.seconds-4,'time penalty');
+assert(!surfaceAt(40,40));assert.equal(COURSE.tiles.length,7);console.log('physics: acceleration, coast, braking, uphill/downhill, collision, open edge, fast checkpoint respawn passed');
