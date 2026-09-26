@@ -1,1 +1,7 @@
-{"title":"Marble Madness 3D","url":"https://geekthegreybeard.github.io/r1-marble-madness-3d/?release=20260926-1","description":"An original isometric marble course with 20 levels, tilt direction, wheel-or-touch speed, and tap jumps.","iconUrl":"","themeColor":"#5DE6C8"}
+{
+  "title": "Marble Madness 3D \u00b7 Momentum Lab",
+  "url": "https://geekthegreybeard.github.io/r1-marble-madness-3d/?release=2eacdc8",
+  "description": "One floating physics test course: tilt direction, wheel-or-touch force, momentum and checkpoint falls.",
+  "iconUrl": "",
+  "themeColor": "#78E2CD"
+}
