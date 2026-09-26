@@ -1,0 +1,7 @@
+// Actual CC0 foley samples, loaded lazily on the first unmute gesture.
+const names=['roll-stone','roll-wood','impact-metal','impact-wood','jump','elevator','platform','warning','collapse','finish','bomb','feature','checkpoint'];
+const samples=new Map();let muted=true,ctx=null,loaded=false,lastRoll=0;
+export const audioState=()=>({muted,loaded});
+export async function toggleAudio(){muted=!muted;if(muted){ctx?.suspend();return}try{ctx??=new (window.AudioContext||window.webkitAudioContext)();await ctx.resume();if(!loaded){loaded=true;Promise.all(names.map(async name=>{try{const response=await fetch(`assets/${name}.mp3`);if(!response.ok)throw Error(name);samples.set(name,await ctx.decodeAudioData(await response.arrayBuffer()))}catch(e){console.warn('Audio asset unavailable',name,e)}})).catch(()=>{})}}catch(e){console.warn('Audio unavailable',e);muted=true}}
+export function play(name,volume=.45,rate=1){if(muted||!ctx||ctx.state!=='running'||!samples.has(name))return;const source=ctx.createBufferSource(),gain=ctx.createGain();source.buffer=samples.get(name);source.playbackRate.value=rate;gain.gain.value=volume;source.connect(gain).connect(ctx.destination);source.start()}
+export function roll(speed,material,now){if(speed<.9||now-lastRoll<Math.max(.12,.38-speed*.018))return;lastRoll=now;play(material==='collapse'||material==='detour'?'roll-wood':'roll-stone',Math.min(.25,.035+speed*.017),.85+speed*.032)}

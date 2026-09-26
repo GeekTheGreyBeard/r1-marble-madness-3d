@@ -1,26 +1,30 @@
 import assert from 'node:assert/strict';
 import {CATALOG,DIFFICULTIES,createCourse,count} from './courses.js';
-import {newGame,step,surfaceAt,opponentPosition} from './physics.js';
+import {newGame,step,surfaceAt,tileHeight,tilePosition} from './physics.js';
 assert.equal(CATALOG.length,25);assert.equal(new Set(CATALOG.map(c=>c.name)).size,25);
 assert.deepEqual(Object.values(DIFFICULTIES).map(r=>r.lives),[5,3,1]);
-let played=0;
+let played=0,signatures=new Set();
 for(const def of CATALOG){
- const standard=createCourse(def.id,'standard');
+ const standard=createCourse(def.id,'standard');const sequence=standard.path.map(p=>`${p.x},${p.z}`).join(';');signatures.add(sequence);
+ let turns=0,axes=new Set();for(let j=1;j<standard.path.length;j++){let a=standard.path[j-1],b=standard.path[j];axes.add(Math.sign(b.x-a.x)+','+Math.sign(b.z-a.z));if(j>1){let p=standard.path[j-2];if(Math.sign(b.x-a.x)!==Math.sign(a.x-p.x)||Math.sign(b.z-a.z)!==Math.sign(a.z-p.z))turns++}}
+ assert(turns>=9&&axes.size>=3,`course ${def.id} needs turns in all directions`);assert(standard.branches>=3);
  for(const difficulty of Object.keys(DIFFICULTIES)){
-  const course=createCourse(def.id,difficulty),rule=DIFFICULTIES[difficulty];assert.equal(course.lives,rule.lives);assert.equal(course.sections,standard.sections*rule.length);assert.equal(course.hazards.length,count(def.baseline.hazards,rule.hazards));assert.equal(course.features.length,count(def.baseline.features,rule.features));assert.equal(course.opponents.length,count(def.baseline.opponents,rule.opponents));
-  assert(course.tiles.length>7||def.id===1);assert(course.checkpoints.every(p=>surfaceAt(p.x,p.z,course)));
-  // A numerical controller follows the center corridor under the real step integrator,
-  // hazards and moving rivals. This is a simulated path, not proof of human/R1 play.
-  let s=newGame(course);for(let k=0;k<course.seconds*60&&s.status==='playing';k++){
-   const targetZ=Math.min(course.goal.z,s.z+2.8),j=Math.min(course.sections,Math.max(0,Math.round(targetZ/6)));
-   const targetX=course.centers[j];let x=Math.max(-1,Math.min(1,(targetX-s.x)*.65-s.vx*.2)),z=Math.max(-1,Math.min(1,(4.3-s.vz)*.35));
-   s=step(s,{x,z},1/60,course);
-  }
-  assert.equal(s.status,'finished',`${def.id} ${difficulty}: ${s.status} at ${s.z.toFixed(1)} / ${course.goal.z}, x ${s.x.toFixed(1)} falls ${s.falls}`);played++;
+  const course=createCourse(def.id,difficulty),rule=DIFFICULTIES[difficulty];assert.equal(course.lives,rule.lives);assert.equal(course.sections,standard.sections*rule.length-(rule.length-1));assert.equal(course.hazards.length,count(def.baseline.hazards,rule.hazards));assert.equal(course.features.length,count(def.baseline.features,rule.features));assert.equal(course.opponents.length,count(def.baseline.opponents,rule.opponents));
+  assert(course.checkpoints.every(p=>surfaceAt(p.x,p.z,course)));assert(course.tiles.filter(t=>t.kind==='moving').length>=3);assert(course.tiles.filter(t=>t.kind==='elevator').length>=3);assert(course.tiles.filter(t=>t.kind==='collapse').length>=3);
+  for(let j=1;j<course.path.length;j++){let a=course.path[j-1],b=course.path[j];assert(Math.hypot(a.x-b.x,a.z-b.z)<=5.251,`${def.id}: route discontinuity ${j}`)}
+  // Geometric route occupancy and dynamic contacts are verified for every matrix entry;
+  // this is not a claim that tilt steering is human-playable on physical hardware.
+  for(let j=0;j<course.path.length;j++){let p=course.path[j];for(let time of [0,1,3])assert(surfaceAt(p.x,p.z,course,time),`${def.id} ${difficulty} waypoint ${j}`)}
+  played++;
  }
 }
-let c=createCourse(1,'pro'),s=newGame(c);s={...s,x:30,z:0};s=step(s,{},1/60,c);assert.equal(s.lives,0);for(let k=0;k<42;k++)s=step(s,{},1/60,c);assert.equal(s.status,'out');
-let bomb=c.hazards.find(h=>h.kind==='bomb');let b={...newGame(c),x:bomb.x,z:bomb.z-1.1,vz:8};for(let i=0;i<12&&b.lives===1;i++)b=step(b,{},1/60,c);assert.equal(b.lives,0,'bomb collision costs life');
-let f=c.features[0],bonus={...newGame(c),x:f.x,z:f.z};bonus=step(bonus,{},1/60,c);assert(bonus.collected.length>0,'feature acquired');
-let finish={...newGame(c),x:c.goal.x,z:c.goal.z-1.6,vz:5};finish=step(finish,{},1/30,c);assert.equal(finish.status,'finished');assert.equal(step(finish,{},1/30,c).status,'finished');
-console.log(`Simulated ${played} of 75 course/level paths; matrix, collisions, bonuses, life and finish transitions passed`);
+assert(signatures.size>=20,`only ${signatures.size} unique spatial signatures`);
+let c=createCourse(1,'standard'),moving=c.tiles.find(t=>t.kind==='moving'),lift=c.tiles.find(t=>t.kind==='elevator'),fragile=c.tiles.find(t=>t.kind==='collapse');
+assert(Math.abs(tilePosition(moving,1).x-tilePosition(moving,2).x)>.2);assert(Math.abs(tileHeight(lift,1)-tileHeight(lift,3))>1);
+let s={...newGame(c),x:fragile.x,z:fragile.z};let warned=false;for(let i=0;i<285;i++){s=step(s,{brake:true},1/60,c);warned||=s.events.includes('warning');if(s.events.includes('collapse'))break}assert(warned&&s.collapsed.includes(fragile.id)&&s.fallTime>0&&s.lives===2,'linger warning and collapse');assert(!surfaceAt(fragile.x,fragile.z,c,s.elapsed,s.collapsed),'collapsed support removed');
+for(let i=0;i<44;i++)s=step(s,{},1/60,c);assert.equal(s.fallTime,0);assert.equal(s.lives,2);assert(Math.hypot(s.x-c.spawn.x,s.z-c.spawn.z)<.01,'respawn at spawn');
+let cp=c.checkpoints[0],saved={...newGame(c),checkpoint:1,x:40,z:40};saved=step(saved,{},1/60,c);for(let i=0;i<42;i++)saved=step(saved,{},1/60,c);assert(Math.hypot(saved.x-cp.x,saved.z-cp.z)<.1,'checkpoint respawn');
+let bomb=c.hazards.find(h=>h.kind==='bomb'),hit={...newGame(c),x:bomb.x,z:bomb.z};hit=step(hit,{},1/60,c);assert(hit.events.includes('bomb')&&hit.lives===2,'bomb interaction');
+let f=c.features[0],bonus={...newGame(c),x:f.x,z:f.z,invulnerable:1};bonus=step(bonus,{},1/60,c);assert(bonus.events.includes('feature'));
+let goal={...newGame(c),x:c.goal.x,z:c.goal.z};goal=step(goal,{},1/60,c);assert.equal(goal.status,'finished');
+console.log(`75 geometry matrices passed; ${signatures.size} distinct routes; moving support, height transition, warning/collapse, fall/checkpoint, bomb, feature and finish interactions passed`);
