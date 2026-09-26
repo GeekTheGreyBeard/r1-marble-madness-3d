@@ -28,7 +28,12 @@ export function createCourse(id=1,difficulty='standard'){
  tiles[0].kind='start';tiles.at(-1).kind='goal';
  const spawn={...path[0]},goal={...path.at(-1)};
  function distribute(n,kind){return Array.from({length:n},(_,i)=>{const index=3+Math.floor((i+.5)*(path.length-7)/n),p=path[index],t=tiles[index];return {x:p.x+(i%2?2.6:-2.6),z:p.z,r:kind==='feature'?.6:.58,kind:kind==='hazard'?(i%3===0?'bomb':'post'):kind,phase:i*1.7,tileId:t.id}})}
- const hazards=distribute(count(def.baseline.hazards,rule.hazards),'hazard'),features=distribute(count(def.baseline.features,rule.features),'feature').map((f,i)=>({...f,effect:['time','shield','boost'][i%3]})),opponents=distribute(count(def.baseline.opponents,rule.opponents),'opponent');
+ function segmentDistance(p,a,b){const dx=b.x-a.x,dz=b.z-a.z,q=Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.z-a.z)*dz)/(dx*dx+dz*dz||1)));return Math.hypot(p.x-a.x-q*dx,p.z-a.z-q*dz)}
+ // Bombs remain on visible support but out of the primary steering corridor.
+ // Search the optional plaza surfaces and platform corners rather than placing lethal
+ // objects at the center of a narrow turn. Keep route geometry and counts intact.
+ const bombSites=[...branches,...tiles.slice(2,-2)].flatMap(t=>[-.33,0,.33].flatMap(dx=>[-.33,0,.33].map(dz=>({x:t.x+dx*t.w,z:t.z+dz*t.l,tileId:t.id})))).map(p=>({...p,clearance:Math.min(...path.slice(1).map((v,j)=>segmentDistance(p,path[j],v)))})).filter(p=>p.clearance>1.65).sort((a,b)=>b.clearance-a.clearance);
+ const hazards=distribute(count(def.baseline.hazards,rule.hazards),'hazard').map((h,i)=>h.kind==='bomb'?{...h,...bombSites[Math.floor(i/3)%bombSites.length]}:h),features=distribute(count(def.baseline.features,rule.features),'feature').map((f,i)=>({...f,effect:['time','shield','boost'][i%3]})),opponents=distribute(count(def.baseline.opponents,rule.opponents),'opponent').map(o=>{const t=tiles[o.tileId];if(t.kind!=='collapse')return o;const safe=tiles.slice(Math.max(2,o.tileId-3),o.tileId).reverse().find(t=>t.kind==='stone');return safe?{...o,x:safe.x+2.6,z:safe.z,tileId:safe.id}:o});
  const checkpoints=[Math.floor(path.length/3),Math.floor(path.length*2/3)].map(i=>{while(['collapse','moving','elevator'].includes(tiles[i].kind))i--;return {...path[i],tileId:i}});
  return {...def,difficulty,lives:rule.lives,seconds:Math.ceil(path.length*5.25*3.2+60),spawn,goal,tiles:[...tiles,...branches],path,checkpoints,hazards,features,opponents,sections:path.length,branches:branches.length};
 }
