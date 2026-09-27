@@ -10,7 +10,7 @@ for(const def of CATALOG){
  assert(turns>=9&&axes.size>=3,`course ${def.id} needs turns in all directions`);assert(standard.branches>=3);
  for(const difficulty of Object.keys(DIFFICULTIES)){
   const course=createCourse(def.id,difficulty),rule=DIFFICULTIES[difficulty];assert.equal(course.lives,rule.lives);assert.equal(course.sections,standard.sections*rule.length-(rule.length-1));assert.equal(course.hazards.length,count(def.baseline.hazards,rule.hazards));assert.equal(course.features.length,count(def.baseline.features,rule.features));assert.equal(course.opponents.length,count(def.baseline.opponents,rule.opponents));
-  assert(course.checkpoints.every(p=>surfaceAt(p.x,p.z,course)));assert(course.tiles.filter(t=>t.kind==='moving').length>=3);assert(course.tiles.filter(t=>t.kind==='elevator').length>=3);assert(course.tiles.filter(t=>t.kind==='collapse').length>=3);
+  assert(course.checkpoints.every(p=>surfaceAt(p.x,p.z,course)));assert(course.tiles.filter(t=>t.kind==='moving').length>=3);assert(course.tiles.filter(t=>t.kind==='elevator').length>=3);assert(course.tiles.filter(t=>t.kind==='collapse').length>=3);for(const shape of ['bank','bowl','ramp'])assert(course.tiles.some(t=>t.terrain===shape),`${def.id} ${difficulty} missing ${shape}`);
   for(let j=1;j<course.path.length;j++){let a=course.path[j-1],b=course.path[j];assert(Math.hypot(a.x-b.x,a.z-b.z)<=5.251,`${def.id}: route discontinuity ${j}`)}
   // Geometric route occupancy and dynamic contacts are verified for every matrix entry;
   // this is not a claim that tilt steering is human-playable on physical hardware.

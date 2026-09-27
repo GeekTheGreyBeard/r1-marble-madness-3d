@@ -19,7 +19,8 @@ export function createCourse(id=1,difficulty='standard'){
   for(let j=m?1:0;j<motif.length;j++){
    const [cx,cz]=motif[j],x=cx*cell*flip,z=(cz+offset)*cell;
    const index=path.length,kind=j===Math.floor(motif.length*.34)?'moving':j===Math.floor(motif.length*.62)?'elevator':j===Math.floor(motif.length*.8)?'collapse':'stone';
-   const tile={x,z,w:10.1,l:10.1,h:0,dx:0,dz:0,kind,id:index,module:m};path.push({x,z});tiles.push(tile);
+   const terrain=kind==='stone'&&[4,7,11].includes(j)?['bank','bowl','ramp'][(m+id+j)%3]:null;
+   const tile={x,z,w:10.1,l:10.1,h:0,dx:0,dz:0,kind,terrain,id:index,module:m};path.push({x,z});tiles.push(tile);
   }
   // Alternate route across a small two-sided plaza: visible optional surface, not an invisible shortcut.
   const anchor=motif[3],a={x:(anchor[0]+(anchor[0]>0?0.9:-0.9))*cell*flip,z:(anchor[1]+offset+.55)*cell};

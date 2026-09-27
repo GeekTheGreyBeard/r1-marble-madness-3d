@@ -1,5 +1,5 @@
 import {tiltControl,gesture,isTap,GESTURE} from './controls.js';
-import {TUNE,newGame,step,clamp,opponentPosition,surfaceAt,tileHeight,tilePosition} from './physics.js';
+import {TUNE,newGame,step,clamp,opponentPosition,surfaceAt,tileHeight,tilePosition,surfaceHeight} from './physics.js';
 import {toggleAudio,play,roll,audioState} from './audio.js';
 import {createCourse,CATALOG,DIFFICULTIES} from './courses.js';
 const $=id=>document.getElementById(id),canvas=$('game'),ctx=canvas.getContext('2d');let selected=1,difficulty='standard',COURSE=createCourse(selected,difficulty),state=newGame(COURSE),started=false,paused=false,tiltSeen=false,tiltInput={x:0,z:0},tiltCenter=null,force=3,last=performance.now(),camera={x:0,z:7},keys=new Set(),notice='',brakePressed=false,jumpQueued=false,orientationTimer=null,motionStatus='idle',lastTap=null,gestureStart=null,muted=true;
@@ -8,11 +8,23 @@ const scale=8.4;
 function project(x,z,h=0){const X=x-camera.x,Z=z-camera.z;return {x:120+(X-Z)*scale*.70,y:147+(X+Z)*scale*.38-h*scale*.9}}
 function polygon(points,fill,stroke='#10232b'){ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);for(const p of points.slice(1))ctx.lineTo(p.x,p.y);ctx.closePath();ctx.fillStyle=fill;ctx.fill();ctx.strokeStyle=stroke;ctx.lineWidth=.8;ctx.stroke()}
 const palette={start:['#426d68','#83e1bc'],ramp:['#836c53','#ffd196'],crest:['#477181','#9bdbea'],bank:['#397779','#80e0dc'],bridge:['#ad7551','#ffc68b'],turn:['#456c78','#98dfdf'],goal:['#458a76','#a7f6cf'],stone:['#456b76','#9ed9d7'],detour:['#897e5c','#e7d698'],moving:['#4b819e','#a9e6ff'],elevator:['#796d9b','#dfc7ff'],collapse:['#aa7752','#ffdf9d']};
-function tile(t){const x=tilePosition(t,state.elapsed).x,z=t.z,w=t.w/2,l=t.l/2,h=(X,Z)=>tileHeight(t,state.elapsed)+t.dx*(X-x)+t.dz*(Z-z);let corners=[[x-w,z-l],[x+w,z-l],[x+w,z+l],[x-w,z+l]],top=corners.map(([X,Z])=>project(X,Z,h(X,Z)));const bottom=corners.map(([X,Z])=>project(X,Z,h(X,Z)-.65));const [base,accent]=palette[t.kind]||palette.stone;polygon([top[2],top[3],bottom[3],bottom[2]],'#102d38');polygon([top[1],top[2],bottom[2],bottom[1]],'#1b4550');polygon(top,t.kind==='collapse'&&(state.lingering[t.id]||0)>2.2?'#b6574a':base);
- // A quiet inset track and fine edge lighting add material depth without masking gaps.
- const c=project(x,z,h(x,z)+.015);ctx.save();ctx.globalAlpha=.18;ctx.strokeStyle=accent;ctx.lineWidth=.75;ctx.beginPath();ctx.moveTo((top[0].x+c.x)/2,(top[0].y+c.y)/2);ctx.lineTo((top[1].x+c.x)/2,(top[1].y+c.y)/2);ctx.lineTo((top[2].x+c.x)/2,(top[2].y+c.y)/2);ctx.stroke();ctx.restore();
+function tile(t){
+ const x=tilePosition(t,state.elapsed).x,z=t.z,w=t.w/2,l=t.l/2;
+ const P=(u,v,below=0)=>project(x+u*w,z+v*l,surfaceHeight(t,x+u*w,z+v*l,state.elapsed)-below);
+ const top=[P(-1,-1),P(1,-1),P(1,1),P(-1,1)],bottom=[P(-1,-1,.65),P(1,-1,.65),P(1,1,.65),P(-1,1,.65)];
+ const [base,accent]=palette[t.terrain||t.kind]||palette.stone;
+ polygon([top[2],top[3],bottom[3],bottom[2]],'#102d38');polygon([top[1],top[2],bottom[2],bottom[1]],'#1b4550');
+ // Four-by-four projected height-field cells, not paint on a flat collision slab.
+ // Seam heights are zero at the edge; subtle contour seams make curvature legible.
+ const N=t.terrain?4:1,grid=Array.from({length:N+1},(_,i)=>Array.from({length:N+1},(_,j)=>P(-1+2*j/N,-1+2*i/N)));
+ for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+  const shade=(i+j)%2===0?base:(t.terrain==='bowl'?'#3b6672':t.terrain==='ramp'?'#526d78':'#416c75');
+  polygon([grid[i][j],grid[i][j+1],grid[i+1][j+1],grid[i+1][j]],t.kind==='collapse'&&(state.lingering[t.id]||0)>2.2?'#b6574a':shade,t.terrain?'#a8d8d53a':'#10232b');
+ }
  ctx.strokeStyle=accent;ctx.globalAlpha=.9;ctx.lineWidth=1.35;ctx.setLineDash(t.kind==='collapse'?[3,3]:[]);ctx.beginPath();top.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
- if(['moving','elevator','collapse'].includes(t.kind)){const c=project(x,z,tileHeight(t,state.elapsed)+.08);ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.fillStyle='#0e2430';ctx.fillText(t.kind==='moving'?'↔':t.kind==='elevator'?'↕':'!',c.x+1,c.y+3);ctx.fillStyle='#fff4da';ctx.fillText(t.kind==='moving'?'↔':t.kind==='elevator'?'↕':'!',c.x,c.y+2)} }
+ if(t.terrain){const c=P(0,0);ctx.font='bold 8px system-ui';ctx.textAlign='center';ctx.fillStyle='#e6fff1';ctx.fillText(t.terrain==='bank'?'⌒':t.terrain==='bowl'?'◡':'↗',c.x,c.y+2)}
+ if(['moving','elevator','collapse'].includes(t.kind)){const c=P(0,0);ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.fillStyle='#0e2430';ctx.fillText(t.kind==='moving'?'↔':t.kind==='elevator'?'↕':'!',c.x+1,c.y+3);ctx.fillStyle='#fff4da';ctx.fillText(t.kind==='moving'?'↔':t.kind==='elevator'?'↕':'!',c.x,c.y+2)} }
+
 function orb(x,z,y,r,color,roll=0){const p=project(x,z,y);const g=ctx.createRadialGradient(p.x-r*.33,p.y-r*.52,.5,p.x,p.y,r);g.addColorStop(0,'#fff9e6');g.addColorStop(.3,color);g.addColorStop(.8,color);g.addColorStop(1,'#1b3846');ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#d3f7e4aa';ctx.lineWidth=.8;ctx.stroke();ctx.strokeStyle='#1a3545';ctx.lineWidth=1.3;ctx.beginPath();ctx.ellipse(p.x,p.y,r*.73,r*.31,roll,0,Math.PI*2);ctx.stroke();ctx.fillStyle='#fff9e8';ctx.beginPath();ctx.arc(p.x-r*.3,p.y-r*.36,1.4,0,7);ctx.fill()}
 function draw(){let sky=ctx.createLinearGradient(0,0,0,282);sky.addColorStop(0,'#193645');sky.addColorStop(.65,'#0d2734');sky.addColorStop(1,'#071a27');ctx.fillStyle=sky;ctx.fillRect(0,0,240,282);
  // Sparse, fixed navigation grid: no particle layer or full-screen animated filter.
@@ -22,9 +34,9 @@ function draw(){let sky=ctx.createLinearGradient(0,0,0,282);sky.addColorStop(0,'
   const nearest=COURSE.path.reduce((best,p,i)=>Math.hypot(p.x-state.x,p.z-state.z)<best.d?{i,d:Math.hypot(p.x-state.x,p.z-state.z)}:best,{i:0,d:Infinity}).i;
   for(let i=Math.max(0,nearest-1);i<Math.min(COURSE.path.length,nearest+6);i++){
    const p=COURSE.path[i],support=surfaceAt(p.x,p.z,COURSE,state.elapsed,state.collapsed);if(!support)continue;
-   const q=project(p.x,p.z,tileHeight(support,state.elapsed)+.12),next=COURSE.path[i+1];if(q.x<0||q.x>240||q.y<32||q.y>260)continue;
+   const q=project(p.x,p.z,surfaceHeight(support,p.x,p.z,state.elapsed)+.12),next=COURSE.path[i+1];if(q.x<0||q.x>240||q.y<32||q.y>260)continue;
    ctx.fillStyle=i===nearest+1?'#fff1a1':'#c7ffe4';ctx.beginPath();ctx.arc(q.x,q.y,i===nearest+1?3:1.8,0,7);ctx.fill();
-   if(next&&surfaceAt(next.x,next.z,COURSE,state.elapsed,state.collapsed)){const dx=next.x-p.x,dz=next.z-p.z,end=project(p.x+dx*.32,p.z+dz*.32,tileHeight(support,state.elapsed)+.12);ctx.strokeStyle='#e2ffe1';ctx.lineWidth=1.6;ctx.beginPath();ctx.moveTo(q.x,q.y);ctx.lineTo(end.x,end.y);ctx.stroke()}
+   if(next&&surfaceAt(next.x,next.z,COURSE,state.elapsed,state.collapsed)){const dx=next.x-p.x,dz=next.z-p.z,end=project(p.x+dx*.32,p.z+dz*.32,surfaceHeight(support,p.x+dx*.32,p.z+dz*.32,state.elapsed)+.12);ctx.strokeStyle='#e2ffe1';ctx.lineWidth=1.6;ctx.beginPath();ctx.moveTo(q.x,q.y);ctx.lineTo(end.x,end.y);ctx.stroke()}
   }
   for(const [i,cp] of COURSE.checkpoints.entries()){const p=project(cp.x,cp.z,1.25);ctx.strokeStyle=state.checkpoint>i?'#fff4a4':'#9ce7e7';ctx.lineWidth=3;ctx.beginPath();ctx.ellipse(p.x,p.y,10,5,-.5,0,7);ctx.stroke()}const g=project(COURSE.goal.x,COURSE.goal.z,.6);ctx.strokeStyle='#a1ffe0';ctx.lineWidth=4;ctx.beginPath();ctx.ellipse(g.x,g.y,13,7,-.5,0,7);ctx.stroke();for(const post of COURSE.hazards){const h=tileHeight(surfaceAt(post.x,post.z,COURSE,state.elapsed,state.collapsed)||{kind:'stone'},state.elapsed);orb(post.x,post.z,h+.55,post.r*scale*.8,post.kind==='bomb'?'#ff3f54':'#df7770');if(post.kind==='bomb'){const p=project(post.x,post.z,h+1);ctx.fillStyle='#ffdc82';ctx.fillRect(p.x-2,p.y-8,4,4)}}for(const [i,f] of COURSE.features.entries()){if(state.collected.includes(i))continue;const p=project(f.x,f.z,.9);ctx.fillStyle=f.effect==='time'?'#f9dc7a':f.effect==='shield'?'#8cebd1':'#9daaff';ctx.beginPath();ctx.moveTo(p.x,p.y-7);ctx.lineTo(p.x+6,p.y);ctx.lineTo(p.x,p.y+7);ctx.lineTo(p.x-6,p.y);ctx.fill()}for(const o of COURSE.opponents){const p=opponentPosition(o,state.elapsed);orb(p.x,p.z,tileHeight(surfaceAt(p.x,p.z,COURSE,state.elapsed,state.collapsed)||{kind:'stone'},state.elapsed)+.55,5,'#b46fe3')}const shadow=project(state.x,state.z,state.y-TUNE.radius);ctx.fillStyle='#00121daa';ctx.beginPath();ctx.ellipse(shadow.x+3,shadow.y+5,6,2.8,-.45,0,7);ctx.fill();orb(state.x,state.z,state.y,5.5,'#f8b35b',state.roll);drawMap();}
 function drawMap(){
