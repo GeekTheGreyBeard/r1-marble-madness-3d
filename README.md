@@ -34,7 +34,7 @@ Run `node controls-test.mjs`, `node campaign-test.mjs`, `node route-test.mjs`, a
 
 ## Install on R1
 
-Scan this release-specific Creation QR with the R1 to install the published game, or open the [release-specific Creation URL](https://geekthegreybeard.github.io/r1-marble-madness-3d/?release=20260927-hud-brake). This QR is refreshed with each published release and decoded against the Creation card before delivery.
+On the R1, open **Creations card → Create tab → Add via QR code** and point its scanner at the QR below, displayed at a comfortable size on another screen. The QR carries the Creation metadata JSON (`title`, `url`, `description`, `iconUrl`, `themeColor`) used by [Rabbit's Creations SDK QR generator](https://github.com/rabbit-hmi-oss/creations-sdk/tree/main/qr), not just the [release-specific game URL](https://geekthegreybeard.github.io/r1-marble-madness-3d/?release=20260927-hud-brake). It has a white quiet zone and black square modules. Decoding and hosted checks cannot establish acceptance by a physical R1; if the device still says invalid, record the exact message and scanner screen.
 
 ![Marble Madness 3D R1 installation QR](marble-madness-3d-r1-install-qr.png)
 
