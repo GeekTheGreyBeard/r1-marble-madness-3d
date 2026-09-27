@@ -1,7 +1,7 @@
 {
-  "title": "Marble Madness 3D · Momentum Lab",
-  "url": "https://geekthegreybeard.github.io/r1-marble-madness-3d/?release=e248dc7",
-  "description": "25 curved 3D-style routes with banked surfaces, bowls, ramps, moving supports and sampled audio; tilt, BRAKE and jump.",
+  "title": "Marble Madness 3D \u00b7 Momentum Lab",
+  "url": "https://geekthegreybeard.github.io/r1-marble-madness-3d/?release=20260927-hud-brake",
+  "description": "25 curved courses, tilt and jump; scoreboard brake toggle and wheel/touch force fallback.",
   "iconUrl": "",
   "themeColor": "#A2EBD6"
 }
